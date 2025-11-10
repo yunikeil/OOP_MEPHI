@@ -3,6 +3,7 @@ package org.example;
 import java.io.*;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 
 /**
@@ -56,6 +57,7 @@ public class FinanceApp {
                         currentUser = null;
                         System.out.println("Вы вышли из аккаунта.");
                         break;
+
                     // Команды, доступные только после авторизации
                     case "add_income":
                         requireUser(currentUser);
@@ -69,16 +71,40 @@ public class FinanceApp {
                         requireUser(currentUser);
                         handleSetBudget(walletService, currentUser);
                         break;
+                    case "edit_budget":
+                        requireUser(currentUser);
+                        handleEditBudget(walletService, currentUser);
+                        break;
+                    case "budgets":
+                        requireUser(currentUser);
+                        handleListBudgets(currentUser);
+                        break;
+                    case "rename_category":
+                        requireUser(currentUser);
+                        handleRenameCategory(walletService, currentUser);
+                        break;
                     case "summary":
                         requireUser(currentUser);
                         handleSummary(walletService, currentUser);
+                        break;
+                    case "report":
+                        requireUser(currentUser);
+                        handleReport(walletService, currentUser);
                         break;
                     case "list_tx":
                         requireUser(currentUser);
                         handleListTransactions(currentUser);
                         break;
+                    case "export_csv":
+                        requireUser(currentUser);
+                        handleExportCsv(walletService, currentUser);
+                        break;
+                    case "import_csv":
+                        requireUser(currentUser);
+                        handleImportCsv(walletService, currentUser);
+                        break;
                     default:
-                        System.out.println("Неизвестная команда. Введите 'help' для списка команд.");
+                        System.out.println("Неизвестная команда '" + cmd + "'. Введите 'help' для списка команд.");
                 }
             } catch (IllegalStateException e) {
                 System.out.println("Ошибка: " + e.getMessage());
@@ -96,19 +122,46 @@ public class FinanceApp {
     // ---------- CLI-помощники ----------
 
     private static void printHelp(boolean loggedIn) {
-        System.out.println("Доступные команды:");
-        System.out.println("  help          - показать эту справку");
-        System.out.println("  register      - регистрация нового пользователя");
-        System.out.println("  login         - вход пользователя");
-        System.out.println("  logout        - выход из аккаунта");
-        System.out.println("  exit          - выход из программы и сохранение данных");
+        System.out.println("=== Справка по командам ===");
+        System.out.println("Базовые команды:");
+        System.out.println("  help              - показать эту справку");
+        System.out.println("  register          - регистрация нового пользователя");
+        System.out.println("  login             - вход пользователя");
+        System.out.println("  logout            - выход из аккаунта");
+        System.out.println("  exit              - выход из программы и сохранение данных");
+
         if (loggedIn) {
-            System.out.println("  add_income    - добавить доход");
-            System.out.println("  add_expense   - добавить расход");
-            System.out.println("  set_budget    - установить/изменить бюджет по категории");
-            System.out.println("  summary       - сводка по категориям и остатки бюджетов");
-            System.out.println("  list_tx       - список операций");
+            System.out.println();
+            System.out.println("Работа с деньгами:");
+            System.out.println("  add_income        - добавить доход (интерактивный ввод)");
+            System.out.println("  add_expense       - добавить расход (интерактивный ввод)");
+            System.out.println("  list_tx           - список операций (таблица)");
+
+            System.out.println();
+            System.out.println("Бюджеты и категории:");
+            System.out.println("  set_budget        - установить/изменить бюджет по категории");
+            System.out.println("  edit_budget       - изменить существующий бюджет");
+            System.out.println("  budgets           - показать таблицу всех бюджетов");
+            System.out.println("  rename_category   - переименовать категорию (во всех операциях и бюджетах)");
+
+            System.out.println();
+            System.out.println("Отчёты и статистика:");
+            System.out.println("  summary           - сводка по всем категориям и бюджетам (текущий месяц)");
+            System.out.println("  report            - отчёт по выборке (период + несколько категорий)");
+
+            System.out.println();
+            System.out.println("Экспорт / импорт:");
+            System.out.println("  export_csv        - экспорт операций в CSV");
+            System.out.println("  import_csv        - импорт операций из CSV");
+
+            System.out.println();
+            System.out.println("Примеры использования:");
+            System.out.println("  add_income        → введите сумму, категорию ('ЗП') и описание");
+            System.out.println("  set_budget        → 'Еда', затем месячный лимит (например, 20000)");
+            System.out.println("  report            → задайте диапазон дат и список категорий ('Еда, Транспорт')");
+            System.out.println("  export_csv        → укажите имя файла, например 'report.csv'");
         }
+        System.out.println("============================");
     }
 
     private static UserAccount handleRegister(AuthService authService) {
@@ -144,10 +197,10 @@ public class FinanceApp {
         String category = readNonEmptyString("Введите категорию расхода (например, Еда, Аренда): ");
         String description = readNonEmptyString("Описание (например, продукты): ");
 
-        String notification = walletService.addExpense(user, amount, category, description);
+        List<String> notifications = walletService.addExpense(user, amount, category, description);
         System.out.println("Расход добавлен. Текущий баланс: " + String.format("%.2f", user.getWallet().getBalance()));
-        if (notification != null && !notification.isEmpty()) {
-            System.out.println(notification);
+        for (String note : notifications) {
+            System.out.println(note);
         }
     }
 
@@ -155,16 +208,81 @@ public class FinanceApp {
         String category = readNonEmptyString("Категория (например, Еда, Аренда): ");
         double limit = readPositiveDouble("Месячный лимит по этой категории: ");
         walletService.setBudget(user, category, limit);
-        System.out.println("Бюджет по категории '" + category + "' установлен: " + String.format("%.2f", limit));
+        System.out.println("Бюджет по категории '" + category + "' установлен/обновлён: " + String.format("%.2f", limit));
+    }
+
+    private static void handleEditBudget(WalletService walletService, UserAccount user) {
+        String category = readNonEmptyString("Категория бюджета, который хотите изменить: ");
+        Wallet wallet = user.getWallet();
+        CategoryBudget existing = wallet.getBudget(category);
+        if (existing == null) {
+            System.out.println("Бюджет по этой категории не найден. Используйте 'set_budget' для создания.");
+            return;
+        }
+        System.out.println("Текущий лимит: " + String.format("%.2f", existing.getLimit()));
+        double newLimit = readPositiveDouble("Новый месячный лимит: ");
+        walletService.setBudget(user, category, newLimit);
+        System.out.println("Бюджет обновлён.");
+    }
+
+    private static void handleListBudgets(UserAccount user) {
+        Wallet wallet = user.getWallet();
+        Map<String, CategoryBudget> budgets = wallet.getBudgets();
+        if (budgets.isEmpty()) {
+            System.out.println("Бюджеты пока не заданы.");
+            return;
+        }
+        System.out.println("=== Бюджеты по категориям ===");
+        System.out.printf("%-20s | %-12s%n", "Категория", "Лимит");
+        System.out.println("---------------------+--------------");
+        for (CategoryBudget b : budgets.values()) {
+            System.out.printf("%-20s | %-12.2f%n", b.getName(), b.getLimit());
+        }
+    }
+
+    private static void handleRenameCategory(WalletService walletService, UserAccount user) {
+        String oldCat = readNonEmptyString("Старая категория: ");
+        String newCat = readNonEmptyString("Новая категория: ");
+        walletService.renameCategory(user, oldCat, newCat);
+        System.out.println("Категория '" + oldCat + "' переименована в '" + newCat + "'.");
     }
 
     private static void handleSummary(WalletService walletService, UserAccount user) {
         List<String> summaryLines = walletService.buildSummary(user);
-        System.out.println("----- Сводка -----");
+        System.out.println("===== Сводка =====");
         for (String line : summaryLines) {
             System.out.println(line);
         }
-        System.out.println("------------------");
+        System.out.println("==================");
+    }
+
+    private static void handleReport(WalletService walletService, UserAccount user) {
+        System.out.println("Отчёт по выборке.");
+        LocalDate from = readDateOrEmpty("Дата начала (ГГГГ-ММ-ДД, пусто - без ограничения): ");
+        LocalDate to = readDateOrEmpty("Дата конца   (ГГГГ-ММ-ДД, пусто - без ограничения): ");
+        if (from != null && to != null && to.isBefore(from)) {
+            System.out.println("Неверный диапазон: дата конца раньше даты начала.");
+            return;
+        }
+        System.out.print("Категории через запятую (пусто - все): ");
+        String catsLine = scanner.nextLine().trim();
+        Set<String> cats = null;
+        if (!catsLine.isEmpty()) {
+            cats = new HashSet<>();
+            for (String c : catsLine.split(",")) {
+                String trimmed = c.trim();
+                if (!trimmed.isEmpty()) {
+                    cats.add(trimmed.toLowerCase());
+                }
+            }
+        }
+
+        List<String> lines = walletService.buildFilteredReport(user, from, to, cats);
+        System.out.println("===== Отчёт по выборке =====");
+        for (String l : lines) {
+            System.out.println(l);
+        }
+        System.out.println("============================");
     }
 
     private static void handleListTransactions(UserAccount user) {
@@ -174,20 +292,46 @@ public class FinanceApp {
             System.out.println("Операций пока нет.");
             return;
         }
-        System.out.println("Последние операции:");
+        System.out.println("=== Последние операции ===");
+        System.out.printf("%-10s | %-7s | %-15s | %-10s | %s%n",
+                "Дата", "Тип", "Категория", "Сумма", "Описание");
+        System.out.println("-----------+---------+-----------------+------------+------------------------");
+
         txs.stream()
                 .sorted(Comparator.comparing(Transaction::getDate).reversed())
                 .limit(50)
                 .forEach(tx -> {
-                    System.out.println(String.format(
-                            "%s | %s | %s | %s | %.2f",
+                    String typeLabel = tx.getType() == TransactionType.INCOME ? "Доход" : "Расход";
+                    System.out.printf("%-10s | %-7s | %-15s | %-10.2f | %s%n",
                             tx.getDate(),
-                            tx.getType() == TransactionType.INCOME ? "Доход " : "Расход",
+                            typeLabel,
                             tx.getCategory(),
-                            tx.getDescription(),
-                            tx.getAmount()
-                    ));
+                            tx.getAmount(),
+                            tx.getDescription());
                 });
+    }
+
+    private static void handleExportCsv(WalletService walletService, UserAccount user) {
+        String filename = readNonEmptyString("Имя файла для экспорта (например, report.csv): ");
+        try {
+            walletService.exportTransactionsToCsv(user, filename);
+            System.out.println("Операции экспортированы в файл: " + filename);
+        } catch (IOException e) {
+            System.out.println("Ошибка при экспорте: " + e.getMessage());
+        }
+    }
+
+    private static void handleImportCsv(WalletService walletService, UserAccount user) {
+        String filename = readNonEmptyString("Имя файла для импорта (CSV): ");
+        try {
+            int imported = walletService.importTransactionsFromCsv(user, filename);
+            System.out.println("Импорт завершён. Добавлено операций: " + imported);
+            System.out.println("Текущий баланс: " + String.format("%.2f", user.getWallet().getBalance()));
+        } catch (FileNotFoundException e) {
+            System.out.println("Файл не найден: " + filename);
+        } catch (IOException e) {
+            System.out.println("Ошибка при чтении файла: " + e.getMessage());
+        }
     }
 
     private static void requireUser(UserAccount user) {
@@ -225,6 +369,21 @@ public class FinanceApp {
                 System.out.println("Значение не может быть пустым.");
             } else {
                 return s;
+            }
+        }
+    }
+
+    private static LocalDate readDateOrEmpty(String prompt) {
+        while (true) {
+            System.out.print(prompt);
+            String s = scanner.nextLine().trim();
+            if (s.isEmpty()) {
+                return null;
+            }
+            try {
+                return LocalDate.parse(s);
+            } catch (DateTimeParseException e) {
+                System.out.println("Неверный формат даты. Используйте ГГГГ-ММ-ДД, например 2025-01-15.");
             }
         }
     }
@@ -343,7 +502,7 @@ class Wallet implements Serializable {
         return result;
     }
 
-    private String normalizeCategory(String category) {
+    public static String normalizeCategory(String category) {
         return category.trim().toLowerCase();
     }
 }
@@ -364,7 +523,7 @@ class Transaction implements Serializable {
 
     private final TransactionType type;
     private final double amount;
-    private final String category;
+    private String category;
     private final String description;
     private final LocalDate date;
 
@@ -386,6 +545,10 @@ class Transaction implements Serializable {
 
     public String getCategory() {
         return category;
+    }
+
+    public void setCategory(String newCategory) {
+        this.category = newCategory;
     }
 
     public String getDescription() {
@@ -486,9 +649,9 @@ class WalletService {
     }
 
     /**
-     * Добавляет расход и возвращает текст уведомления, если нужно предупредить.
+     * Добавляет расход и возвращает список текстовых уведомлений.
      */
-    public String addExpense(UserAccount user, double amount, String category, String description) {
+    public List<String> addExpense(UserAccount user, double amount, String category, String description) {
         validateAmount(amount);
         validateCategory(category);
         Wallet wallet = user.getWallet();
@@ -496,27 +659,43 @@ class WalletService {
         Transaction tx = new Transaction(TransactionType.EXPENSE, amount, category, description, LocalDate.now());
         wallet.addTransaction(tx);
 
+        List<String> notifications = new ArrayList<>();
+
         YearMonth ym = YearMonth.from(tx.getDate());
         CategoryBudget budget = wallet.getBudget(category);
         double spent = wallet.getSpentForCategoryInMonth(category, ym);
 
         if (budget == null) {
-            return "Предупреждение: по категории '" + category + "' ещё не установлен бюджет.";
+            notifications.add("Предупреждение: по категории '" + category + "' ещё не установлен бюджет.");
         } else {
             double limit = budget.getLimit();
             if (spent > limit) {
-                return String.format(
+                notifications.add(String.format(
                         "ВНИМАНИЕ: бюджет по категории '%s' превышен. Потрачено %.2f из %.2f (перерасход %.2f).",
                         budget.getName(), spent, limit, spent - limit
-                );
+                ));
             } else if (spent >= 0.9 * limit) {
-                return String.format(
-                        "Осторожно: вы почти исчерпали бюджет по категории '%s'. Потрачено %.2f из %.2f.",
+                notifications.add(String.format(
+                        "Осторожно: вы превысили 90%% бюджета по категории '%s'. Потрачено %.2f из %.2f.",
                         budget.getName(), spent, limit
-                );
+                ));
+            } else if (spent >= 0.8 * limit) {
+                notifications.add(String.format(
+                        "Предупреждение: израсходовано более 80%% бюджета по категории '%s'. Потрачено %.2f из %.2f.",
+                        budget.getName(), spent, limit
+                ));
             }
         }
-        return null;
+
+        // Доп. уведомление: нулевой или отрицательный баланс
+        if (wallet.getBalance() <= 0) {
+            notifications.add(String.format(
+                    "ВНИМАНИЕ: ваш баланс нулевой или отрицательный (%.2f).",
+                    wallet.getBalance()
+            ));
+        }
+
+        return notifications;
     }
 
     public void setBudget(UserAccount user, String category, double limit) {
@@ -525,8 +704,39 @@ class WalletService {
         user.getWallet().setBudget(category, limit);
     }
 
+    public void renameCategory(UserAccount user, String oldCategory, String newCategory) {
+        validateCategory(oldCategory);
+        validateCategory(newCategory);
+
+        Wallet wallet = user.getWallet();
+        String oldKey = Wallet.normalizeCategory(oldCategory);
+        String newKey = Wallet.normalizeCategory(newCategory);
+
+        if (oldKey.equals(newKey)) {
+            throw new IllegalArgumentException("Старая и новая категории совпадают.");
+        }
+
+        boolean foundInTx = false;
+        for (Transaction t : wallet.getTransactions()) {
+            String key = Wallet.normalizeCategory(t.getCategory());
+            if (key.equals(oldKey)) {
+                t.setCategory(newCategory);
+                foundInTx = true;
+            }
+        }
+
+        CategoryBudget oldBudget = wallet.getBudgets().remove(oldKey);
+        if (oldBudget != null) {
+            wallet.getBudgets().put(newKey, new CategoryBudget(newCategory, oldBudget.getLimit()));
+        }
+
+        if (!foundInTx && oldBudget == null) {
+            throw new IllegalArgumentException("Категория '" + oldCategory + "' не найдена ни в операциях, ни в бюджетах.");
+        }
+    }
+
     /**
-     * Строит строки сводки по категориям и бюджетам.
+     * Сводка по текущему месяцу и бюджетам.
      */
     public List<String> buildSummary(UserAccount user) {
         Wallet wallet = user.getWallet();
@@ -541,38 +751,232 @@ class WalletService {
         lines.add(String.format("Всего доходов: %.2f, всего расходов: %.2f", totalIncome, totalExpense));
         lines.add("");
         lines.add("Текущий месяц: " + ym.getMonthValue() + "." + ym.getYear());
-        lines.add("Бюджеты и расходы по категориям:");
+        lines.add("Бюджеты и расходы по категориям (текущий месяц):");
+        lines.add(String.format("%-20s | %-10s | %-10s | %-10s | %-12s",
+                "Категория", "Потрачено", "Лимит", "Остаток", "Статус"));
+        lines.add("---------------------+------------+------------+------------+-------------");
 
         Map<String, Double> spentByCat = wallet.getExpensesByCategoryForMonth(ym);
 
-        // Сначала категории с бюджетами
         if (wallet.getBudgets().isEmpty()) {
-            lines.add("  Бюджеты пока не заданы.");
+            lines.add("Бюджеты пока не заданы.");
         } else {
             for (CategoryBudget budget : wallet.getBudgets().values()) {
-                String key = budget.getName().trim().toLowerCase();
+                String key = Wallet.normalizeCategory(budget.getName());
                 double spent = spentByCat.getOrDefault(key, 0.0);
                 double limit = budget.getLimit();
                 double remaining = limit - spent;
-                lines.add(String.format(
-                        "  %-15s: потрачено %.2f из %.2f, остаток %.2f",
-                        budget.getName(), spent, limit, remaining
-                ));
+                String status;
+                if (spent > limit) {
+                    status = "Перерасход";
+                } else if (spent >= 0.9 * limit) {
+                    status = "90%+";
+                } else if (spent >= 0.8 * limit) {
+                    status = "80%+";
+                } else if (spent == 0) {
+                    status = "Не тратилось";
+                } else {
+                    status = "OK";
+                }
+                lines.add(String.format("%-20s | %-10.2f | %-10.2f | %-10.2f | %-12s",
+                        budget.getName(), spent, limit, remaining, status));
             }
         }
 
         // Категории, где были расходы, но бюджета нет
+        boolean extraCatsHeader = false;
         for (Map.Entry<String, Double> entry : spentByCat.entrySet()) {
             String catKey = entry.getKey();
             if (!wallet.getBudgets().containsKey(catKey)) {
-                lines.add(String.format(
-                        "  %-15s: потрачено %.2f (бюджет не задан)",
-                        catKey, entry.getValue()
-                ));
+                if (!extraCatsHeader) {
+                    lines.add("");
+                    lines.add("Категории без бюджета:");
+                    lines.add(String.format("%-20s | %-10s", "Категория", "Потрачено"));
+                    lines.add("---------------------+------------");
+                    extraCatsHeader = true;
+                }
+                lines.add(String.format("%-20s | %-10.2f", catKey, entry.getValue()));
             }
         }
 
         return lines;
+    }
+
+    /**
+     * Отчёт по выборке: период + (опционально) несколько категорий.
+     */
+    public List<String> buildFilteredReport(UserAccount user, LocalDate from, LocalDate to, Set<String> categories) {
+        Wallet wallet = user.getWallet();
+        List<Transaction> txs = wallet.getTransactions();
+
+        List<Transaction> filtered = new ArrayList<>();
+        for (Transaction t : txs) {
+            LocalDate d = t.getDate();
+            if (from != null && d.isBefore(from)) continue;
+            if (to != null && d.isAfter(to)) continue;
+            if (categories != null && !categories.isEmpty()) {
+                String key = Wallet.normalizeCategory(t.getCategory());
+                if (!categories.contains(key)) continue;
+            }
+            filtered.add(t);
+        }
+
+        List<String> lines = new ArrayList<>();
+        String periodStr;
+        if (from == null && to == null) periodStr = "все даты";
+        else if (from != null && to == null) periodStr = "с " + from + " и позже";
+        else if (from == null) periodStr = "до " + to;
+        else periodStr = "c " + from + " по " + to;
+
+        String catsStr;
+        if (categories == null || categories.isEmpty()) catsStr = "все категории";
+        else catsStr = String.join(", ", categories);
+
+        lines.add("Период: " + periodStr);
+        lines.add("Категории: " + catsStr);
+        lines.add("");
+
+        if (filtered.isEmpty()) {
+            lines.add("Нет данных для указанного периода/категорий.");
+            return lines;
+        }
+
+        double totalIncome = 0.0;
+        double totalExpense = 0.0;
+        Map<String, Double> expenseByCat = new HashMap<>();
+
+        lines.add("Операции:");
+        lines.add(String.format("%-10s | %-7s | %-15s | %-10s | %s",
+                "Дата", "Тип", "Категория", "Сумма", "Описание"));
+        lines.add("-----------+---------+-----------------+------------+------------------------");
+
+        for (Transaction t : filtered) {
+            String typeLabel = t.getType() == TransactionType.INCOME ? "Доход" : "Расход";
+            if (t.getType() == TransactionType.INCOME) {
+                totalIncome += t.getAmount();
+            } else {
+                totalExpense += t.getAmount();
+                String key = Wallet.normalizeCategory(t.getCategory());
+                expenseByCat.put(key, expenseByCat.getOrDefault(key, 0.0) + t.getAmount());
+            }
+            lines.add(String.format("%-10s | %-7s | %-15s | %-10.2f | %s",
+                    t.getDate(),
+                    typeLabel,
+                    t.getCategory(),
+                    t.getAmount(),
+                    t.getDescription()));
+        }
+
+        lines.add("");
+        lines.add(String.format("Всего доходов: %.2f", totalIncome));
+        lines.add(String.format("Всего расходов: %.2f", totalExpense));
+
+        if (!expenseByCat.isEmpty()) {
+            lines.add("");
+            lines.add("Расходы по категориям:");
+            lines.add(String.format("%-20s | %-10s", "Категория", "Потрачено"));
+            lines.add("---------------------+------------");
+            for (Map.Entry<String, Double> e : expenseByCat.entrySet()) {
+                lines.add(String.format("%-20s | %-10.2f", e.getKey(), e.getValue()));
+            }
+        }
+
+        return lines;
+    }
+
+    public void exportTransactionsToCsv(UserAccount user, String filename) throws IOException {
+        Wallet wallet = user.getWallet();
+        List<Transaction> txs = wallet.getTransactions();
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(filename))) {
+            writer.write("date,type,category,description,amount");
+            writer.newLine();
+            for (Transaction t : txs) {
+                String typeStr = t.getType() == TransactionType.INCOME ? "INCOME" : "EXPENSE";
+                // Экранируем запятые и кавычки в описании/категории
+                String categoryEsc = escapeCsv(t.getCategory());
+                String descEsc = escapeCsv(t.getDescription());
+                writer.write(t.getDate() + "," + typeStr + "," + categoryEsc + "," + descEsc + "," + t.getAmount());
+                writer.newLine();
+            }
+        }
+    }
+
+    public int importTransactionsFromCsv(UserAccount user, String filename) throws IOException {
+        Wallet wallet = user.getWallet();
+        int imported = 0;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(filename))) {
+            String line = reader.readLine(); // предполагаем, что первая строка — заголовок
+            if (line == null) return 0;
+
+            while ((line = reader.readLine()) != null) {
+                if (line.trim().isEmpty()) continue;
+                String[] parts = parseCsvLine(line);
+                if (parts.length < 5) {
+                    System.out.println("Пропускаю строку (мало столбцов): " + line);
+                    continue;
+                }
+                try {
+                    LocalDate date = LocalDate.parse(parts[0].trim());
+                    String typeStr = parts[1].trim().toUpperCase();
+                    TransactionType type = "INCOME".equals(typeStr) ? TransactionType.INCOME : TransactionType.EXPENSE;
+                    String category = parts[2].trim();
+                    String description = parts[3].trim();
+                    double amount = Double.parseDouble(parts[4].trim().replace(",", "."));
+                    if (amount <= 0) {
+                        System.out.println("Пропускаю строку (неположительная сумма): " + line);
+                        continue;
+                    }
+                    Transaction tx = new Transaction(type, amount, category, description, date);
+                    wallet.addTransaction(tx);
+                    imported++;
+                } catch (Exception e) {
+                    System.out.println("Пропускаю строку (ошибка парсинга): " + line + " | " + e.getMessage());
+                }
+            }
+        }
+        return imported;
+    }
+
+    private static String escapeCsv(String value) {
+        if (value == null) return "";
+        boolean needQuotes = value.contains(",") || value.contains("\"") || value.contains("\n");
+        String v = value.replace("\"", "\"\"");
+        return needQuotes ? "\"" + v + "\"" : v;
+    }
+
+    // Очень простой парсер CSV-строки (поддерживает кавычки)
+    private static String[] parseCsvLine(String line) {
+        List<String> result = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (inQuotes) {
+                if (c == '\"') {
+                    if (i + 1 < line.length() && line.charAt(i + 1) == '\"') {
+                        current.append('\"');
+                        i++;
+                    } else {
+                        inQuotes = false;
+                    }
+                } else {
+                    current.append(c);
+                }
+            } else {
+                if (c == '\"') {
+                    inQuotes = true;
+                } else if (c == ',') {
+                    result.add(current.toString());
+                    current.setLength(0);
+                } else {
+                    current.append(c);
+                }
+            }
+        }
+        result.add(current.toString());
+        return result.toArray(new String[0]);
     }
 
     private void validateAmount(double amount) {
