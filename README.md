@@ -1,1 +1,4 @@
  [![Coverage Pages](https://github.com/yunikeil/OOP_MEPHI/actions/workflows/coverage-pages.yaml/badge.svg)](https://github.com/yunikeil/OOP_MEPHI/actions/workflows/coverage-pages.yaml) [![Java CI](https://github.com/yunikeil/OOP_MEPHI/actions/workflows/ci.yaml/badge.svg)](https://github.com/yunikeil/OOP_MEPHI/actions/workflows/ci.yaml) [![Coverage report](https://img.shields.io/badge/coverage-report-blue)](https://yunikeil.github.io/OOP_MEPHI/)
+
+1. Git clone
+2. Run button xD
