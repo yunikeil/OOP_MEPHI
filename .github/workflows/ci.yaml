@@ -1,0 +1,49 @@
+name: Java CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      # 1. clean
+      - name: Gradle clean
+        run: ./gradlew clean --no-daemon
+
+      # 2. Тесты
+      - name: Gradle test
+        run: ./gradlew test --no-daemon
+        continue-on-error: false
+
+      # 3. Checkstyle (main + test)
+      - name: Gradle checkstyle
+        run: ./gradlew checkstyleMain checkstyleTest --no-daemon
+        continue-on-error: true
+
+      # 4. Spotless
+      - name: Gradle spotlessCheck
+        run: ./gradlew spotlessCheck --no-daemon
+        continue-on-error: true
+
+      # 5. Отчёт покрытия
+      - name: Gradle jacocoTestReport
+        run: ./gradlew jacocoTestReport --no-daemon
+        continue-on-error: true
