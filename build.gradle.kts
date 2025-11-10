@@ -2,7 +2,10 @@ plugins {
     application
     java
     jacoco
+    checkstyle
+    id("com.diffplug.spotless") version "6.25.0"
 }
+
 
 
 group = "org.example"
@@ -22,6 +25,17 @@ application {
     mainClass.set("org.example.Main")
 }
 
+spotless {
+    java {
+        target("src/**/*.java")
+
+        // автоформат по Google Java Style
+        googleJavaFormat("1.17.0")
+
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
 
 tasks.test {
     useJUnitPlatform()
@@ -39,8 +53,23 @@ tasks.test {
 }
 
 
+checkstyle {
+    toolVersion = "10.17.0"
+    configDirectory.set(file("config/checkstyle"))
+}
+
+tasks.withType<Checkstyle> {
+    isIgnoreFailures = false
+}
+
+
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
+}
+
+
+tasks.check {
+    dependsOn("spotlessCheck")
 }
 
 
